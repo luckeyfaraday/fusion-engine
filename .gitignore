@@ -43,5 +43,10 @@ htmlcov/
 # Athena / Context Workspace local tooling state (recall, memory, context bundles)
 .context-workspace/
 
-# Eval run outputs (keep datasets, ignore generated results)
+# Eval run outputs and download cache
 evals/results/
+evals/.cache/
+
+# Generated benchmark datasets (regenerate with evals/prepare.py); keep the sample
+evals/datasets/*.jsonl
+!evals/datasets/sample.jsonl

@@ -1,0 +1,5 @@
+# Optional eval dependencies. gsm8k + humaneval need only the core httpx;
+# mmlu and gpqa load through Hugging Face datasets (gpqa is gated — accept its
+# terms on HF and `huggingface-cli login` first).
+#   pip install -r requirements.txt -r requirements-eval.txt
+datasets>=2.14

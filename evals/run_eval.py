@@ -66,13 +66,12 @@ async def run(args: argparse.Namespace) -> int:
     rows: list[dict] = []
     for it in items:
         item_id = it.get("id")
-        target = str(it.get("target", ""))
         grader = args.grader or it.get("grader", "exact_match")
         print(f"\n[{item_id}] grader={grader}", file=sys.stderr)
         for s in syslist:
             try:
                 res = await s.run(it["prompt"], web_search=args.web_search)
-                score = graders.grade(grader, res.answer, target)
+                score = graders.grade(grader, res.answer, it)
                 err = res.error
             except Exception as exc:  # noqa: BLE001 - record, don't abort the run
                 res = systems.SystemResult(answer="", error=f"{type(exc).__name__}: {exc}")

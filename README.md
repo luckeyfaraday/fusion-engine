@@ -300,7 +300,30 @@ python evals/run_eval.py --panel quality --dataset evals/datasets/sample.jsonl
 # iterate cheaply with --limit 5
 ```
 
-A dataset is JSONL, one item per line:
+### Industry-standard benchmarks
+
+Don't hand-write items — pull real benchmarks with `evals/prepare.py`, then point
+the runner at the generated dataset:
+
+```bash
+pip install -r requirements-eval.txt           # only needed for mmlu / gpqa
+python evals/prepare.py gsm8k --limit 100       # -> evals/datasets/gsm8k.jsonl
+python evals/run_eval.py --panel quality --dataset evals/datasets/gsm8k.jsonl
+```
+
+| Benchmark | Tests | Grader | Source |
+|---|---|---|---|
+| `gsm8k` | grade-school math reasoning | `numeric` | GitHub, ungated |
+| `humaneval` | Python synthesis, run against unit tests | `code_exec` | GitHub, ungated |
+| `mmlu` | 57-subject knowledge (multiple choice) | `multiple_choice` | HF `cais/mmlu` |
+| `gpqa` | graduate-level science (multiple choice) | `multiple_choice` | HF `Idavidrein/gpqa` — **gated** (accept terms + `huggingface-cli login`) |
+
+`gsm8k`/`humaneval` download directly (httpx); `mmlu`/`gpqa` use the `datasets`
+library. `--limit N` takes a seeded random sample to bound cost. `code_exec` runs
+model-generated code — **sandbox it** (container/VM) for untrusted models.
+
+A dataset is JSONL, one item per line (the format `prepare.py` emits, and what you
+write for a custom set):
 
 ```json
 {"id": "mc1", "prompt": "...", "target": "B", "grader": "multiple_choice", "category": "science"}
@@ -332,9 +355,10 @@ templates and keep what moves the metric for *your* workload.
 - **Streaming** — stream panel responses and the synthesis as they arrive.
 - **Result caching** — cache by `(prompt, panel)` to avoid paying twice for
   identical runs.
-- **More evals** — wire up public benchmarks (HumanEval, GPQA, GSM8K), add a
-  sandboxed code-execution grader and an LLM-as-judge grader (on a neutral model),
-  and cache calls so re-runs are free. (Core harness lives in `evals/`.)
+- **More evals** — add an LLM-as-judge grader (on a neutral model) for
+  open-ended tasks, more benchmarks (MATH, SWE-bench), and per-call result
+  caching so re-runs are free. (Benchmarks + harness already live in `evals/`:
+  GSM8K, HumanEval, MMLU, GPQA with numeric/code-exec/multiple-choice graders.)
 - **Packaging** — ship a `pyproject.toml` so it's `pip install`-able with a
   stable `fusion_engine` import name.
 
