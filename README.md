@@ -288,6 +288,43 @@ but the orchestration, judging, and policy are yours.
 
 ---
 
+## Benchmarking — does fusion actually beat one model?
+
+The whole premise is that a panel beats any single model. Don't take it on
+faith — measure it. The `evals/` harness scores a panel's fusion against the
+right baselines on the same items.
+
+```bash
+export OPENROUTER_API_KEY=sk-or-v1-...
+python evals/run_eval.py --panel quality --dataset evals/datasets/sample.jsonl
+# iterate cheaply with --limit 5
+```
+
+A dataset is JSONL, one item per line:
+
+```json
+{"id": "mc1", "prompt": "...", "target": "B", "grader": "multiple_choice", "category": "science"}
+```
+
+For each item the harness runs three kinds of **system** and grades each answer:
+
+- `fusion:<panel>` — the whole panel + judge
+- `single:<model>` — each panel member on its own
+- `judge_alone:<model>` — the judge model alone, with no panel
+
+That last one is the baseline most "ensembles win" claims forget: fusion adds the
+panel *on top of* the judge, so it has to beat the judge answering solo — and the
+best single member — to justify its extra cost. The report prints per-system
+accuracy/cost/latency plus a **paired** comparison (Δaccuracy, win/tie/loss, and a
+bootstrap 95% CI) so you can tell a real gain from noise, and weigh it against the
+N× cost. Graders ship for `multiple_choice`, `numeric`, `exact_match`, and
+`contains` (in `evals/graders.py`); add your own there.
+
+Beyond a one-off check, this is how you **tune panels** — swap models, judges, or
+templates and keep what moves the metric for *your* workload.
+
+---
+
 ## Roadmap
 
 - **Web UI** — a browser front-end (on top of the HTTP API) for running fusions
@@ -295,8 +332,9 @@ but the orchestration, judging, and policy are yours.
 - **Streaming** — stream panel responses and the synthesis as they arrive.
 - **Result caching** — cache by `(prompt, panel)` to avoid paying twice for
   identical runs.
-- **Eval framework** — score panels/judges against benchmark sets to tune which
-  models and prompts actually improve answers.
+- **More evals** — wire up public benchmarks (HumanEval, GPQA, GSM8K), add a
+  sandboxed code-execution grader and an LLM-as-judge grader (on a neutral model),
+  and cache calls so re-runs are free. (Core harness lives in `evals/`.)
 - **Packaging** — ship a `pyproject.toml` so it's `pip install`-able with a
   stable `fusion_engine` import name.
 

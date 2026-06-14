@@ -1,0 +1,6 @@
+{"id": "mc1", "prompt": "Which planet is the largest in the Solar System? Reply with only the letter.\nA) Earth\nB) Jupiter\nC) Mars\nD) Venus", "target": "B", "grader": "multiple_choice", "category": "science"}
+{"id": "mc2", "prompt": "Which data structure offers O(1) average-case lookup by key? Reply with only the letter.\nA) Linked list\nB) Binary search tree\nC) Hash table\nD) Array", "target": "C", "grader": "multiple_choice", "category": "cs"}
+{"id": "num1", "prompt": "What is 17 * 23? Give only the number.", "target": "391", "grader": "numeric", "category": "math"}
+{"id": "num2", "prompt": "A train travels 240 km in 3 hours. What is its average speed in km/h? Give only the number.", "target": "80", "grader": "numeric", "category": "math"}
+{"id": "em1", "prompt": "What is the capital of Japan? Answer in one word.", "target": "Tokyo", "grader": "exact_match", "category": "geo"}
+{"id": "con1", "prompt": "Name the Python keyword used to define a function.", "target": "def", "grader": "contains", "category": "cs"}

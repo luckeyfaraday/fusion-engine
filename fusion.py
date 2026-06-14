@@ -505,3 +505,34 @@ class FusionEngine:
             total_cost=total_cost,
             total_latency_ms=total_latency_ms,
         )
+
+    async def complete_one(
+        self, model: str, prompt: str, web_search: bool = False
+    ) -> PanelResponse:
+        """Run a single model on a prompt — no panel, no judge.
+
+        This is the baseline counterpart to :meth:`fuse`: it lets callers
+        evaluate one model on its own (e.g. each panel member, or a judge-alone
+        control) so a panel can be compared against the models that compose it.
+        Like :meth:`fuse`, a model-side failure is captured in the returned
+        :class:`PanelResponse` rather than raised.
+
+        Args:
+            model: OpenRouter model slug to query.
+            prompt: The user prompt.
+            web_search: If True, enable OpenRouter's ``web`` search plugin.
+
+        Returns:
+            The model's :class:`PanelResponse` (content, tokens, latency, cost).
+
+        Raises:
+            RuntimeError: If no OpenRouter API key is available.
+        """
+        if not self._api_key:
+            raise RuntimeError(
+                "No OpenRouter API key. Set OPENROUTER_API_KEY or pass api_key."
+            )
+        plugins = [{"id": "web"}] if web_search else None
+        messages = [{"role": "user", "content": prompt}]
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            return await self._complete(client, model, messages, plugins=plugins)

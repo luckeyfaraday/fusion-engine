@@ -42,3 +42,6 @@ htmlcov/
 
 # Athena / Context Workspace local tooling state (recall, memory, context bundles)
 .context-workspace/
+
+# Eval run outputs (keep datasets, ignore generated results)
+evals/results/
