@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "name": "quality",
+  "description": "Frontier models for maximum answer quality. Use when correctness and depth justify the cost, e.g. hard reasoning, research, or high-stakes decisions.",
+  "models": [
+    {
+      "slug": "anthropic/claude-fable-5",
+      "role": "panelist",
+      "max_tokens": 8192
+    },
+    {
+      "slug": "openai/gpt-5.5",
+      "role": "panelist",
+      "max_tokens": 8192
+    }
+  ],
+  "judge_model": "anthropic/claude-opus-4",
+  "judge_template": "deep_research",
+  "estimated_cost_per_query": {
+    "min": 0.50,
+    "max": 1.00,
+    "currency": "USD",
+    "unit": "query"
+  }
+}

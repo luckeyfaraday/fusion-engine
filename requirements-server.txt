@@ -1,0 +1,4 @@
+# HTTP API dependencies (server.py). Install alongside the core requirements:
+#   pip install -r requirements.txt -r requirements-server.txt
+fastapi>=0.110
+uvicorn[standard]>=0.29

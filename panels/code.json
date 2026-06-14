@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "name": "code",
+  "description": "Code- and technical-task panel pairing a dedicated coding model with strong general reasoners. Pairs naturally with the code_review judge template.",
+  "models": [
+    {
+      "slug": "openai/codex",
+      "role": "panelist",
+      "max_tokens": 8192
+    },
+    {
+      "slug": "anthropic/claude-opus-4",
+      "role": "panelist",
+      "max_tokens": 8192
+    },
+    {
+      "slug": "deepseek/deepseek-v4-pro",
+      "role": "panelist",
+      "max_tokens": 8192
+    }
+  ],
+  "judge_model": "anthropic/claude-opus-4",
+  "judge_template": "code_review",
+  "estimated_cost_per_query": {
+    "min": 0.30,
+    "max": 0.60,
+    "currency": "USD",
+    "unit": "query"
+  }
+}

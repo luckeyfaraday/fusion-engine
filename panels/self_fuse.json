@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "name": "self_fuse",
+  "description": "Self-fusion test panel: the same model queried twice (independent samples) and judged by itself. Useful for measuring how much fusion alone improves results, with model choice held constant.",
+  "models": [
+    {
+      "slug": "deepseek/deepseek-v4-pro",
+      "role": "panelist_a",
+      "max_tokens": 4096
+    },
+    {
+      "slug": "deepseek/deepseek-v4-pro",
+      "role": "panelist_b",
+      "max_tokens": 4096
+    }
+  ],
+  "judge_model": "deepseek/deepseek-v4-pro",
+  "judge_template": "default",
+  "estimated_cost_per_query": {
+    "min": 0.01,
+    "max": 0.01,
+    "currency": "USD",
+    "unit": "query"
+  }
+}

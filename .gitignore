@@ -1,0 +1,44 @@
+# Byte-compiled / optimized / cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Secrets / local config
+.env
+.env.local
+*.local
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Test / coverage / type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Fusion run artifacts (cached results, logs)
+.fusion_cache/
+*.log
+
+# Editor / OS cruft
+.idea/
+.vscode/
+.DS_Store
+
+# Athena / Context Workspace local tooling state (recall, memory, context bundles)
+.context-workspace/
