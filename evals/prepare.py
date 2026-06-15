@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Fetch a real benchmark and write it as an eval dataset (JSONL).
 
-    python evals/prepare.py gsm8k --limit 100
-    python evals/prepare.py humaneval
-    python evals/prepare.py mmlu --split test --limit 200     # needs `datasets`
-    python evals/prepare.py gpqa                               # needs `datasets` + HF login
+    python3 evals/prepare.py gsm8k --limit 100
+    python3 evals/prepare.py humaneval
+    python3 evals/prepare.py mmlu --split test --limit 200     # needs `datasets`
+    python3 evals/prepare.py gpqa                               # needs `datasets` + HF login
 
 ``--limit`` takes a seeded random sample so eval cost stays bounded (omit for the
 full set). Output defaults to ``evals/datasets/<benchmark>.jsonl``. Then run::
 
-    python evals/run_eval.py --panel <panel> --dataset evals/datasets/<benchmark>.jsonl
+    python3 evals/run_eval.py --panel <panel> --dataset evals/datasets/<benchmark>.jsonl
 """
 
 from __future__ import annotations

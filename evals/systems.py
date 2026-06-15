@@ -48,7 +48,7 @@ class FusionSystem:
     def __post_init__(self) -> None:
         self.name = self.name or f"fusion:{self.panel_name}"
         self._cfg = panels.load_panel(self.panel_name)
-        self._slugs = panels.panel_slugs(self._cfg)
+        self._model_specs = panels.panel_model_specs(self._cfg)
         self._judge = self._cfg["judge_model"]
         self._tmpl = panels.judge_template_path(self._cfg)
 
@@ -57,7 +57,10 @@ class FusionSystem:
         # judge template per call is safe.
         self.engine.judge_template_path = self._tmpl
         r = await self.engine.fuse(
-            prompt, panel=self._slugs, judge_model=self._judge, web_search=web_search
+            prompt,
+            panel=self._model_specs,
+            judge_model=self._judge,
+            web_search=web_search,
         )
         return SystemResult(
             answer=r.answer,

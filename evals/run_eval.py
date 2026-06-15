@@ -4,7 +4,7 @@
 Usage::
 
     export OPENROUTER_API_KEY=sk-or-v1-...
-    python evals/run_eval.py --panel quality --dataset evals/datasets/sample.jsonl
+    python3 evals/run_eval.py --panel quality --dataset evals/datasets/sample.jsonl
 
 Dataset is JSONL, one item per line::
 
@@ -31,6 +31,15 @@ from pathlib import Path
 # evals/ dir on path for sibling imports; project root for fusion/panels.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Load OPENROUTER_API_KEY / FUSION_* from the project-root .env if present. Real
+# environment variables take precedence. Optional dependency: skip if missing.
+try:
+    from dotenv import load_dotenv  # noqa: E402
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 import graders  # noqa: E402
 import report  # noqa: E402

@@ -1,1 +1,2 @@
 httpx>=0.27.0
+python-dotenv>=1.0  # loads .env at startup (cli.py, server.py, evals/run_eval.py)

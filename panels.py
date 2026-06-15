@@ -72,6 +72,22 @@ def panel_slugs(panel: dict[str, Any]) -> list[str]:
     return slugs
 
 
+def panel_model_specs(panel: dict[str, Any]) -> list[str | dict[str, Any]]:
+    """Ordered model entries preserving per-model options such as max_tokens.
+
+    The engine accepts either bare slug strings or dictionaries containing a
+    ``slug`` key. Passing full dictionaries lets ``panels/*.json`` request caps
+    be honored without losing backwards compatibility with older simple panels.
+    """
+    specs: list[str | dict[str, Any]] = []
+    for model in panel.get("models", []):
+        if isinstance(model, str):
+            specs.append(model)
+        elif isinstance(model, dict) and model.get("slug"):
+            specs.append(dict(model))
+    return specs
+
+
 def judge_template_path(panel: dict[str, Any]) -> Path:
     """Path to a panel's judge template: its ``judge_template``, else the default.
 

@@ -66,31 +66,31 @@ fusing their answers gives you:
 
 ```bash
 # 1. Get the code
-git clone <your-fork-url> fusion-engine
+git clone https://github.com/<owner>/fusion-engine.git
 cd fusion-engine
 
-# 2. Install dependencies
-pip install -r requirements.txt
+# 2. Install the CLI and core dependencies
+python3 -m pip install -e .
 
 # 3. Configure your OpenRouter key (required)
 export OPENROUTER_API_KEY=sk-or-v1-...
 #   ...or: cp .env.example .env  and edit it
 
 # 4. Run a fusion query
-python cli.py run "What are the implications of quantum computing on cryptography?" -p budget
+fusion run "What are the implications of quantum computing on cryptography?" -p budget
 ```
 
 Useful CLI flags:
 
 ```bash
 # Show each model's answer + latency + cost, not just the synthesis
-python cli.py run "Compare REST vs gRPC for microservices" -p quality -v
+fusion run "Compare REST vs gRPC for microservices" -p quality -v
 
 # Code-focused panel with live web search enabled
-python cli.py run "Review this auth flow for vulnerabilities" -p code --web-search
+fusion run "Review this auth flow for vulnerabilities" -p code --web-search
 
 # List configured panels and their member models
-python cli.py panels
+fusion panels
 ```
 
 ---
@@ -103,7 +103,7 @@ OpenRouter's `provider/model` form.
 
 | Panel | Member models | Judge (model · template) | Best for | Est. cost / query\* |
 |-------|---------------|--------------------------|----------|---------------------|
-| `budget` | `google/gemini-3-flash-preview`, `moonshotai/kimi-k2.6`, `deepseek/deepseek-v4-pro` | `anthropic/claude-opus-4` · `default` | Drafts, summaries, brainstorming, high-volume runs | $0.02–0.05 |
+| `budget` | `xiaomi/mimo-v2.5`, `deepseek/deepseek-v4-flash`, `xiaomi/mimo-v2.5-pro` | `qwen/qwen3.7-plus` · `default` | Drafts, summaries, brainstorming, high-volume runs | $0.02–0.05 |
 | `quality` | `anthropic/claude-fable-5`, `openai/gpt-5.5` | `anthropic/claude-opus-4` · `deep_research` | High-stakes analysis, research, hard reasoning | $0.50–1.00 |
 | `code` | `openai/codex`, `anthropic/claude-opus-4`, `deepseek/deepseek-v4-pro` | `anthropic/claude-opus-4` · `code_review` | Code review, debugging, security analysis, codegen | $0.30–0.60 |
 | `self_fuse` | `deepseek/deepseek-v4-pro` ×2 (independent samples) | `deepseek/deepseek-v4-pro` · `default` | Measuring how much fusion alone helps, model held constant | ~$0.01 |
@@ -131,8 +131,9 @@ Each panel is a JSON file in `panels/`. The schema:
 }
 ```
 
-`judge_template` names a file in `judges/` (without the `.md`). Drop in a new
-`<name>.json` and it becomes selectable with `-p <name>`.
+`judge_template` names a file in `judges/` (without the `.md`). `max_tokens`, if
+set on a model entry, is forwarded to OpenRouter for that panel member. Drop in a
+new `<name>.json` and it becomes selectable with `-p <name>`.
 
 ---
 
@@ -141,7 +142,8 @@ Each panel is a JSON file in `panels/`. The schema:
 After the panel responds, the judge model is given a **synthesis prompt** plus
 all the collected answers. Judge templates live in `judges/*.md` and are
 selected per panel via the `judge_template` field. The repo ships
-`default`, `deep_research`, `code_review`, and `creative`. They generally
+`default`, `deep_research`, `code_review`, `creative`, and `tool_synthesis`.
+They generally
 instruct the judge to:
 
 1. Read every panel response without assuming any one is correct.
@@ -161,9 +163,10 @@ behavior without touching code.
 
 ## Using it as a library
 
-`FusionEngine.fuse()` is **async** and takes an explicit list of model slugs
-plus a judge model. (The CLI is the thing that resolves a panel *name* like
-`quality` into those slugs by reading `panels/*.json`.)
+`FusionEngine.fuse()` is **async** and takes an explicit list of model slugs (or
+panel model dictionaries with `slug` and optional `max_tokens`) plus a judge
+model. The CLI resolves a panel *name* like `quality` by reading
+`panels/*.json`.
 
 ```python
 import asyncio
@@ -175,8 +178,7 @@ from fusion import FusionEngine  # run from the project dir; see note below
 
 def load_panel(name: str):
     cfg = json.loads(Path(f"panels/{name}.json").read_text())
-    slugs = [m["slug"] for m in cfg["models"]]
-    return slugs, cfg["judge_model"]
+    return cfg["models"], cfg["judge_model"]
 
 
 async def main():
@@ -214,12 +216,10 @@ asyncio.run(main())
 `answer`, `panel_responses`, `judge_response`, `total_cost`, `total_latency_ms`,
 and the `successful_panel` property.
 
-> **Imports.** From inside the project directory, import the modules directly:
-> `from fusion import FusionEngine, FusionResult, PanelResponse`. To use it from
-> another directory, put the project root on your `PYTHONPATH`. The project is
-> not yet packaged for `pip install` (there's no `pyproject.toml`), so a
-> `from fusion_engine import …` import name isn't available yet — see the
-> roadmap. The top-level `__init__.py` already re-exports all three for when it is.
+> **Imports.** The public module import is currently
+> `from fusion import FusionEngine, FusionResult, PanelResponse`. Installing with
+> `python3 -m pip install -e .` also gives you the `fusion` and `fusion-engine`
+> console scripts.
 
 ---
 
@@ -231,10 +231,14 @@ shelling out to the CLI? `server.py` is a thin
 panel resolution with the CLI via `panels.py`.
 
 ```bash
-pip install -r requirements.txt -r requirements-server.txt
+python3 -m pip install -e ".[server]"
 export OPENROUTER_API_KEY=sk-or-v1-...
-uvicorn server:app --host 0.0.0.0 --port 8000   # or: python cli.py ... ; or: python server.py
+uvicorn server:app --host 127.0.0.1 --port 8000   # or: python3 server.py
 ```
+
+If you expose the API beyond localhost, set `FUSION_SERVER_API_KEY` and send
+`Authorization: Bearer <value>` on endpoints that spend credits (`/fuse` and
+`/v1/chat/completions`).
 
 | Method & path | Purpose |
 |---|---|
@@ -242,6 +246,8 @@ uvicorn server:app --host 0.0.0.0 --port 8000   # or: python cli.py ... ; or: py
 | `GET /panels` | List configured panels with members, judge, and est. cost. |
 | `GET /panels/{name}` | Full JSON config for one panel. |
 | `POST /fuse` | Run a fusion; return the synthesized answer + per-model detail. |
+| `GET /v1/models` | OpenAI-compatible model list, one model per panel (`fusion/<panel>`). |
+| `POST /v1/chat/completions` | OpenAI-compatible chat completion with fused tool-call support. |
 
 `POST /fuse` body — only `prompt` plus one of `panel`/`models` is required:
 
@@ -296,7 +302,7 @@ right baselines on the same items.
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-v1-...
-python evals/run_eval.py --panel quality --dataset evals/datasets/sample.jsonl
+python3 evals/run_eval.py --panel quality --dataset evals/datasets/sample.jsonl
 # iterate cheaply with --limit 5
 ```
 
@@ -306,9 +312,9 @@ Don't hand-write items — pull real benchmarks with `evals/prepare.py`, then po
 the runner at the generated dataset:
 
 ```bash
-pip install -r requirements-eval.txt           # only needed for mmlu / gpqa
-python evals/prepare.py gsm8k --limit 100       # -> evals/datasets/gsm8k.jsonl
-python evals/run_eval.py --panel quality --dataset evals/datasets/gsm8k.jsonl
+python3 -m pip install -e ".[eval]"             # only needed for mmlu / gpqa
+python3 evals/prepare.py gsm8k --limit 100       # -> evals/datasets/gsm8k.jsonl
+python3 evals/run_eval.py --panel quality --dataset evals/datasets/gsm8k.jsonl
 ```
 
 | Benchmark | Tests | Grader | Source |
@@ -359,11 +365,11 @@ templates and keep what moves the metric for *your* workload.
   open-ended tasks, more benchmarks (MATH, SWE-bench), and per-call result
   caching so re-runs are free. (Benchmarks + harness already live in `evals/`:
   GSM8K, HumanEval, MMLU, GPQA with numeric/code-exec/multiple-choice graders.)
-- **Packaging** — ship a `pyproject.toml` so it's `pip install`-able with a
-  stable `fusion_engine` import name.
+- **Package namespace** — add a stable `fusion_engine` import package while
+  preserving the current `fusion` module import.
 
 ---
 
 ## License
 
-MIT
+MIT. See `LICENSE`.

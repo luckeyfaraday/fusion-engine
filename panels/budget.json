@@ -4,22 +4,22 @@
   "description": "Three inexpensive, fast models for low-cost fusion. Good default for high-volume or exploratory queries where spend matters more than peak quality.",
   "models": [
     {
-      "slug": "google/gemini-3-flash-preview",
+      "slug": "xiaomi/mimo-v2.5",
       "role": "panelist",
       "max_tokens": 4096
     },
     {
-      "slug": "moonshotai/kimi-k2.6",
+      "slug": "deepseek/deepseek-v4-flash",
       "role": "panelist",
       "max_tokens": 4096
     },
     {
-      "slug": "deepseek/deepseek-v4-pro",
+      "slug": "xiaomi/mimo-v2.5-pro",
       "role": "panelist",
       "max_tokens": 4096
     }
   ],
-  "judge_model": "anthropic/claude-opus-4",
+  "judge_model": "qwen/qwen3.7-plus",
   "judge_template": "default",
   "estimated_cost_per_query": {
     "min": 0.02,

@@ -37,10 +37,12 @@ If the key is missing, tell the user to run:
 
 ## How to run it
 
-The tool is a Python CLI. Always invoke it by absolute path:
+The tool is a Python CLI. From the project directory, invoke the installed
+console script or run `cli.py` directly:
 
 ```
-python /home/alan/home_ai/projects/fusion-engine/cli.py run "<PROMPT>" -p <panel> [flags]
+fusion run "<PROMPT>" -p <panel> [flags]
+# or: python3 cli.py run "<PROMPT>" -p <panel> [flags]
 ```
 
 Key flags:
@@ -54,20 +56,20 @@ Key flags:
 List available panels and their member models:
 
 ```
-python /home/alan/home_ai/projects/fusion-engine/cli.py panels
+fusion panels
 ```
 
 ### Example invocations
 
 ```
 # Strategy analysis on the cheap panel, with per-model breakdown
-python /home/alan/home_ai/projects/fusion-engine/cli.py run "Analyze the competitive landscape for AI coding assistants" -p budget -v
+fusion run "Analyze the competitive landscape for AI coding assistants" -p budget -v
 
 # Security review on the code panel, with live web search
-python /home/alan/home_ai/projects/fusion-engine/cli.py run "Review this code for security issues" -p code --web-search
+fusion run "Review this code for security issues" -p code --web-search
 
 # List the configured panels and their models
-python /home/alan/home_ai/projects/fusion-engine/cli.py panels
+fusion panels
 ```
 
 ## Which panel to use

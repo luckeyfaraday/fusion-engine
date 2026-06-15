@@ -43,6 +43,10 @@ htmlcov/
 # Athena / Context Workspace local tooling state (recall, memory, context bundles)
 .context-workspace/
 
+# Local scratch demos from exploratory agent runs; real Python tests live in tests/*.py
+tests/fpssolo/
+tests/fpspanel/
+
 # Eval run outputs and download cache
 evals/results/
 evals/.cache/

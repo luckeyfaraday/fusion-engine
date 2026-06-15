@@ -46,6 +46,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 PANELS_DIR = PROJECT_ROOT / "panels"
 JUDGES_DIR = PROJECT_ROOT / "judges"
 
+# Load OPENROUTER_API_KEY / FUSION_* from a project-root .env if present. Real
+# environment variables already set take precedence (override=False). Optional:
+# if python-dotenv isn't installed, fall back to the ambient environment.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
 DEFAULT_PANEL = os.environ.get("FUSION_DEFAULT_PANEL", "budget")
 DEFAULT_JUDGE_PROMPT = JUDGES_DIR / "default.md"
 DEFAULT_TIMEOUT = 120
@@ -374,7 +384,7 @@ async def run_fusion(
     engine,
     *,
     prompt: str,
-    slugs: list[str],
+    slugs: list[Any],
     judge_model: str | None,
     web_search: bool,
 ):
@@ -396,7 +406,7 @@ def _execute_run(
     *,
     prompt: str,
     panel: dict[str, Any],
-    slugs: list[str],
+    slugs: list[Any],
     judge_model: str | None,
     web_search: bool,
     judge_prompt_path: Path,
@@ -430,7 +440,8 @@ def _execute_run(
         f"(panel: {panel.get('name', '?')}, judge: {judge_model or '?'})..."
     )
     if verbose:
-        for slug in slugs:
+        for spec in slugs:
+            slug = spec.get("slug") if isinstance(spec, dict) else spec
             eprint(f"  • {slug}")
 
     try:
@@ -473,7 +484,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     panel = load_panel(args.panel)
-    slugs = panel_slugs(panel)
+    slugs = panels.panel_model_specs(panel)
     if not slugs:
         eprint(f"Error: panel '{panel.get('name', args.panel)}' defines no models.")
         return 2
@@ -560,7 +571,7 @@ def cmd_test(args: argparse.Namespace) -> int:
     # Prefer a dedicated self_fuse panel if one exists, else synthesize one.
     if (PANELS_DIR / "self_fuse.json").is_file():
         panel = load_panel("self_fuse")
-        slugs = panel_slugs(panel) or [TEST_MODEL, TEST_MODEL]
+        slugs = panels.panel_model_specs(panel) or [TEST_MODEL, TEST_MODEL]
         judge_model = panel.get("judge_model") or TEST_MODEL
     else:
         panel = {

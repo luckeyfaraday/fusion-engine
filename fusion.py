@@ -13,7 +13,7 @@ Typical usage::
     engine = FusionEngine()
     result = asyncio.run(engine.fuse(
         prompt="What will dominate AI infra in 2027?",
-        panel=["google/gemini-3-flash-preview", "moonshotai/kimi-k2.6"],
+        panel=["xiaomi/mimo-v2.5", "deepseek/deepseek-v4-flash"],
         judge_model="anthropic/claude-opus-4",
         web_search=True,
     ))
@@ -31,7 +31,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -59,6 +59,10 @@ PRICING: dict[str, tuple[float, float]] = {
     "google/gemini-3-flash-preview": (0.15, 0.60),
     "moonshotai/kimi-k2.6": (0.60, 2.50),
     "deepseek/deepseek-v4-pro": (0.40, 1.20),
+    "deepseek/deepseek-v4-flash": (0.10, 0.30),
+    "qwen/qwen3.7-plus": (0.30, 1.20),
+    "xiaomi/mimo-v2.5": (0.15, 0.45),
+    "xiaomi/mimo-v2.5-pro": (0.25, 0.75),
     "anthropic/claude-opus-4": (5.00, 25.00),
     "anthropic/claude-fable-5": (6.00, 30.00),
     "openai/gpt-5.5": (1.50, 12.00),
@@ -106,6 +110,27 @@ JUDGE_PROMPT_TOKEN = "{{prompt}}"
 JUDGE_RESPONSES_TOKEN = "{{model_responses}}"
 JUDGE_COUNT_TOKEN = "{{response_count}}"
 
+# Synthesis instructions for the tool-calling path (:meth:`FusionEngine.fuse_chat`).
+# Used when ``judges/tool_synthesis.md`` is absent. The judge is given the same
+# tools as the panel, so it can emit a single native tool call (or a final
+# answer) rather than describe one. Only ``{{response_count}}`` is substituted.
+DEFAULT_TOOL_JUDGE_TEMPLATE = """\
+You are the judge in a multi-model "fusion" pipeline operating inside a
+tool-using agent. The same conversation and the same set of tools were given to
+a panel of {{response_count}} independent models. Each panelist independently
+proposed the next step — a tool call or a direct answer — and their proposals
+are listed below.
+
+Decide the single best next step and produce it yourself:
+- If acting is warranted, call EXACTLY ONE tool — pick the action the strongest
+  reasoning supports and reconcile any conflicting arguments on the merits. Do
+  not emit multiple tool calls.
+- If no tool is needed, write the final answer directly.
+
+Judge by correctness and the conversation's actual goal, not by majority vote.
+Do not mention the panel, the other models, or that synthesis took place.
+"""
+
 
 # --------------------------------------------------------------------------- #
 # Cost calculation
@@ -115,7 +140,7 @@ def calculate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
     """Estimate the USD cost of a single OpenRouter call.
 
     Args:
-        model: The OpenRouter model slug (e.g. ``"moonshotai/kimi-k2.6"``).
+        model: The OpenRouter model slug (e.g. ``"deepseek/deepseek-v4-pro"``).
         tokens_in: Number of prompt/input tokens billed.
         tokens_out: Number of completion/output tokens billed.
 
@@ -155,6 +180,11 @@ class PanelResponse:
     latency_ms: float = 0.0
     cost_usd: float = 0.0
     error: Optional[str] = None
+    # OpenAI-style tool calls the model emitted (or None). Only populated when
+    # the caller passed ``tools`` — see :meth:`FusionEngine.fuse_chat`.
+    tool_calls: Optional[list[dict[str, object]]] = None
+    # The OpenRouter ``finish_reason`` ("stop", "tool_calls", "length", ...).
+    finish_reason: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -316,22 +346,70 @@ class FusionEngine:
             f"## Panel responses\n{responses_block}"
         )
 
+    def _load_tool_judge_template(self) -> str:
+        """Read ``judges/tool_synthesis.md``, falling back to the built-in default."""
+        path = Path(__file__).resolve().parent / "judges" / "tool_synthesis.md"
+        try:
+            text = path.read_text(encoding="utf-8")
+            if text.strip():
+                return text
+        except OSError:
+            pass
+        return DEFAULT_TOOL_JUDGE_TEMPLATE
+
+    @staticmethod
+    def _format_tool_panel_block(responses: list[PanelResponse]) -> str:
+        """Render each panelist's proposed next step (tool call or answer).
+
+        Tool calls are shown as ``name(arguments)`` so the judge can compare the
+        actions and their arguments before committing to a single one.
+        """
+        chunks: list[str] = []
+        for i, r in enumerate(responses, start=1):
+            header = f"### Model {i} — {r.model}"
+            if not r.ok:
+                chunks.append(f"{header}\n[no answer: this model failed — {r.error}]")
+            elif r.tool_calls:
+                lines = []
+                for tc in r.tool_calls:
+                    fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                    lines.append(f"- {fn.get('name', '?')}({fn.get('arguments', '')})")
+                calls = "\n".join(lines)
+                extra = f"\nReasoning: {r.content}" if r.content.strip() else ""
+                chunks.append(f"{header}\nProposed tool call(s):\n{calls}{extra}")
+            else:
+                chunks.append(f"{header}\nProposed answer:\n{r.content}")
+        return "\n\n".join(chunks)
+
     async def _complete(
         self,
         client: httpx.AsyncClient,
         model: str,
         messages: list[dict[str, object]],
         plugins: Optional[list[dict[str, object]]] = None,
+        tools: Optional[list[dict[str, object]]] = None,
+        tool_choice: Optional[object] = None,
+        max_tokens: Optional[int] = None,
     ) -> PanelResponse:
         """Run one chat completion and wrap it as a :class:`PanelResponse`.
 
         Never raises: any failure (HTTP error, timeout, malformed payload) is
         captured in the returned ``PanelResponse.error`` so a single bad model
         cannot abort the whole fusion run.
+
+        When ``tools`` is given it is forwarded to OpenRouter (OpenAI function
+        calling), and any ``tool_calls`` the model emits are parsed onto the
+        returned :class:`PanelResponse`.
         """
         payload: dict[str, object] = {"model": model, "messages": messages}
         if plugins:
             payload["plugins"] = plugins
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if tools:
+            payload["tools"] = tools
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
 
         start = time.perf_counter()
         try:
@@ -360,7 +438,10 @@ class FusionEngine:
         # Parse the OpenAI-compatible response shape defensively.
         try:
             choice = data["choices"][0]
-            content = choice["message"].get("content") or ""
+            message = choice.get("message") or {}
+            content = message.get("content") or ""
+            tool_calls = message.get("tool_calls") or None
+            finish_reason = choice.get("finish_reason")
         except (KeyError, IndexError, TypeError) as exc:
             msg = f"Malformed response: {type(exc).__name__}: {exc}"
             logger.error("Model %s returned bad payload: %s", model, msg)
@@ -372,12 +453,13 @@ class FusionEngine:
         cost = calculate_cost(model, tokens_in, tokens_out)
 
         logger.info(
-            "Model %s ok: %d in / %d out tokens, %.0f ms, $%.6f",
+            "Model %s ok: %d in / %d out tokens, %.0f ms, $%.6f%s",
             model,
             tokens_in,
             tokens_out,
             latency_ms,
             cost,
+            f", {len(tool_calls)} tool call(s)" if tool_calls else "",
         )
         return PanelResponse(
             model=model,
@@ -386,6 +468,8 @@ class FusionEngine:
             tokens_out=tokens_out,
             latency_ms=latency_ms,
             cost_usd=cost,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
         )
 
     async def _dispatch_panel_member(
@@ -394,6 +478,7 @@ class FusionEngine:
         model: str,
         prompt: str,
         web_search: bool,
+        max_tokens: Optional[int] = None,
     ) -> PanelResponse:
         """Build the request for one panel model and complete it.
 
@@ -403,14 +488,42 @@ class FusionEngine:
         """
         messages = [{"role": "user", "content": prompt}]
         plugins = [{"id": "web"}] if web_search else None
-        return await self._complete(client, model, messages, plugins=plugins)
+        return await self._complete(
+            client, model, messages, plugins=plugins, max_tokens=max_tokens
+        )
+
+    @staticmethod
+    def _model_spec(spec: str | dict[str, Any]) -> tuple[str, Optional[int]]:
+        """Return ``(slug, max_tokens)`` from a panel entry.
+
+        Public callers can keep passing bare string slugs. Panel configs may pass
+        their full ``{"slug": ..., "max_tokens": ...}`` entries so request caps
+        declared in ``panels/*.json`` are actually sent to OpenRouter.
+        """
+        if isinstance(spec, str):
+            return spec, None
+        if not isinstance(spec, dict):
+            raise ValueError("panel entries must be model slugs or model dictionaries")
+        slug = spec.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            raise ValueError("panel model dictionaries must include a non-empty slug")
+        raw_max = spec.get("max_tokens")
+        if raw_max is None:
+            return slug, None
+        try:
+            max_tokens = int(raw_max)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid max_tokens for {slug!r}: {raw_max!r}") from exc
+        if max_tokens <= 0:
+            raise ValueError(f"invalid max_tokens for {slug!r}: {raw_max!r}")
+        return slug, max_tokens
 
     # ------------------------------ public -------------------------------- #
 
     async def fuse(
         self,
         prompt: str,
-        panel: list[str],
+        panel: list[str | dict[str, Any]],
         judge_model: str,
         web_search: bool = False,
     ) -> FusionResult:
@@ -421,7 +534,8 @@ class FusionEngine:
 
         Args:
             prompt: The user prompt sent to every panel model.
-            panel: OpenRouter model slugs to query in parallel.
+            panel: OpenRouter model slugs, or panel model dictionaries with
+                ``slug`` and optional ``max_tokens``, to query in parallel.
             judge_model: Model slug used to synthesize the final answer.
             web_search: If True, enable OpenRouter's ``web`` search plugin on
                 each panel call (the judge call never uses web search).
@@ -441,11 +555,12 @@ class FusionEngine:
             )
         if not panel:
             raise ValueError("panel must contain at least one model slug")
+        panel_specs = [self._model_spec(member) for member in panel]
 
         run_start = time.perf_counter()
         logger.info(
             "Fusion start: %d panel model(s), judge=%s, web_search=%s",
-            len(panel),
+            len(panel_specs),
             judge_model,
             web_search,
         )
@@ -454,8 +569,10 @@ class FusionEngine:
             # 1. Dispatch the whole panel in parallel.
             panel_responses = await asyncio.gather(
                 *(
-                    self._dispatch_panel_member(client, model, prompt, web_search)
-                    for model in panel
+                    self._dispatch_panel_member(
+                        client, model, prompt, web_search, max_tokens=max_tokens
+                    )
+                    for model, max_tokens in panel_specs
                 )
             )
 
@@ -465,7 +582,7 @@ class FusionEngine:
                 logger.warning(
                     "%d/%d panel model(s) failed: %s",
                     len(failed),
-                    len(panel),
+                    len(panel_specs),
                     ", ".join(r.model for r in failed),
                 )
 
@@ -496,6 +613,124 @@ class FusionEngine:
             total_cost,
             total_latency_ms,
             judge_response.ok,
+        )
+
+        return FusionResult(
+            answer=answer,
+            panel_responses=list(panel_responses),
+            judge_response=judge_response,
+            total_cost=total_cost,
+            total_latency_ms=total_latency_ms,
+        )
+
+    async def fuse_chat(
+        self,
+        messages: list[dict[str, object]],
+        panel: list[str | dict[str, Any]],
+        judge_model: str,
+        tools: Optional[list[dict[str, object]]] = None,
+        tool_choice: Optional[object] = None,
+        web_search: bool = False,
+    ) -> FusionResult:
+        """Fusion for a tool-using chat turn (the agentic counterpart to :meth:`fuse`).
+
+        Where :meth:`fuse` takes a single prompt and returns synthesized text,
+        this takes a full OpenAI-style ``messages`` conversation plus a ``tools``
+        schema. It dispatches the conversation and tools to every panel model in
+        parallel — each may propose a tool call or a direct answer — then hands
+        all proposals to the judge, which is given the *same* tools and emits the
+        single synthesized next step (one tool call, or a final answer).
+
+        The judge's decision is the turn's output: read ``judge_response``'s
+        ``tool_calls`` / ``content`` / ``finish_reason`` to build the response.
+        Like :meth:`fuse`, individual model failures are captured, not raised.
+
+        Args:
+            messages: OpenAI-style conversation (system/user/assistant/tool).
+            panel: OpenRouter model slugs, or panel model dictionaries with
+                ``slug`` and optional ``max_tokens``, to consult in parallel.
+            judge_model: Model slug that synthesizes the single next step.
+            tools: OpenAI tool/function schemas, given to panel and judge alike.
+            tool_choice: Optional OpenAI ``tool_choice`` directive, passed through.
+            web_search: If True, enable OpenRouter's ``web`` plugin on panel calls.
+
+        Returns:
+            A :class:`FusionResult`; the actionable output is ``judge_response``.
+
+        Raises:
+            RuntimeError: If no OpenRouter API key is available.
+            ValueError: If ``panel`` is empty.
+        """
+        if not self._api_key:
+            raise RuntimeError(
+                "No OpenRouter API key. Set OPENROUTER_API_KEY or pass api_key."
+            )
+        if not panel:
+            raise ValueError("panel must contain at least one model slug")
+        panel_specs = [self._model_spec(member) for member in panel]
+
+        run_start = time.perf_counter()
+        plugins = [{"id": "web"}] if web_search else None
+        logger.info(
+            "Fusion chat start: %d panel model(s), judge=%s, tools=%d",
+            len(panel_specs),
+            judge_model,
+            len(tools or []),
+        )
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            # 1. Consult the whole panel in parallel on the full conversation.
+            panel_responses = await asyncio.gather(
+                *(
+                    self._complete(
+                        client, model, messages, plugins=plugins,
+                        tools=tools, tool_choice=tool_choice,
+                        max_tokens=max_tokens,
+                    )
+                    for model, max_tokens in panel_specs
+                )
+            )
+
+            succeeded = [r for r in panel_responses if r.ok]
+            if not succeeded:
+                judge_response = PanelResponse(
+                    model=judge_model,
+                    content="",
+                    error="All panel models failed; nothing to synthesize.",
+                )
+                logger.error("Fusion chat aborted: entire panel failed")
+            else:
+                # 2. Judge sees the real conversation + the panel's proposals, and
+                #    has the same tools, so it can commit to one synthesized step.
+                instructions = self._load_tool_judge_template().replace(
+                    JUDGE_COUNT_TOKEN, str(len(panel_responses))
+                )
+                panel_block = self._format_tool_panel_block(panel_responses)
+                judge_messages = list(messages) + [
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{instructions.rstrip()}\n\n"
+                            f"## Panel proposals\n{panel_block}"
+                        ),
+                    }
+                ]
+                judge_response = await self._complete(
+                    client, judge_model, judge_messages,
+                    tools=tools, tool_choice=tool_choice,
+                )
+
+        total_latency_ms = (time.perf_counter() - run_start) * 1000
+        total_cost = round(
+            sum(r.cost_usd for r in panel_responses) + judge_response.cost_usd, 8
+        )
+        answer = judge_response.content if judge_response.ok else ""
+
+        logger.info(
+            "Fusion chat done: $%.6f total, %.0f ms, judge finish=%s",
+            total_cost,
+            total_latency_ms,
+            judge_response.finish_reason,
         )
 
         return FusionResult(

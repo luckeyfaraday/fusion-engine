@@ -9,7 +9,10 @@ Public API:
     PanelResponse   One model's raw response (text, latency, token usage, cost).
 """
 
-from .fusion import FusionEngine, FusionResult, PanelResponse
+try:
+    from .fusion import FusionEngine, FusionResult, PanelResponse
+except ImportError:  # Allows direct import/pytest collection from the repo root.
+    from fusion import FusionEngine, FusionResult, PanelResponse
 
 __all__ = ["FusionEngine", "FusionResult", "PanelResponse"]
 __version__ = "0.1.0"
