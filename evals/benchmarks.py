@@ -111,6 +111,7 @@ def _humaneval_item(rec: dict, idx: int) -> Optional[dict]:
         "target": "",
         "grader": "code_exec",
         "category": "code",
+        "code_context": rec["prompt"],
         "test": rec["test"],
         "entry_point": rec["entry_point"],
     }

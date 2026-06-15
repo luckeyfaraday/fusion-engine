@@ -57,6 +57,7 @@ def multiple_choice(answer: str, item: dict[str, Any]) -> float:
 
 
 _NUM_RE = re.compile(r"-?\d+\.?\d*")
+_CODE_BLOCK_RE = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.S)
 
 
 def numeric(answer: str, item: dict[str, Any]) -> float:
@@ -72,10 +73,33 @@ def numeric(answer: str, item: dict[str, Any]) -> float:
     return 1.0 if abs(got - want) <= 1e-6 * max(1.0, abs(want)) else 0.0
 
 
-def _extract_code(text: str) -> str:
-    """Pull code out of a model answer: a fenced block if present, else the raw text."""
-    m = re.search(r"```(?:python|py)?\s*\n(.*?)```", text, re.S)
-    return (m.group(1) if m else text).strip()
+def _extract_code(text: str, entry_point: str = "") -> str:
+    """Pull executable code from an answer.
+
+    Prefer the last fenced Python block containing the requested entry point;
+    models often include analysis or drafts before the final code block.
+    """
+    blocks = _CODE_BLOCK_RE.findall(text or "")
+    if blocks:
+        if entry_point:
+            entry_re = re.compile(rf"^\s*def\s+{re.escape(entry_point)}\s*\(", re.M)
+            for block in reversed(blocks):
+                if entry_re.search(block):
+                    return block.strip()
+        return blocks[-1].strip()
+    return (text or "").strip()
+
+
+def _code_context(item: dict[str, Any]) -> str:
+    """Prompt scaffold to execute before the answer for HumanEval-style tasks."""
+    context = item.get("code_context")
+    if context:
+        return str(context).strip()
+
+    # Backward compatibility for existing prepared datasets: recover the scaffold
+    # from the prompt's first code block when ``code_context`` is absent.
+    blocks = _CODE_BLOCK_RE.findall(str(item.get("prompt", "")))
+    return blocks[0].strip() if blocks else ""
 
 
 def code_exec(answer: str, item: dict[str, Any]) -> float:
@@ -93,7 +117,12 @@ def code_exec(answer: str, item: dict[str, Any]) -> float:
     if not test or not entry:
         raise ValueError("code_exec needs item['test'] and item['entry_point']")
     timeout = float(item.get("timeout", DEFAULT_CODE_TIMEOUT))
-    program = f"{_extract_code(answer or '')}\n\n{test}\n\ncheck({entry})\n"
+    program = (
+        f"{_code_context(item)}\n\n"
+        f"{_extract_code(answer or '', entry)}\n\n"
+        f"{test}\n\n"
+        f"check({entry})\n"
+    )
     try:
         proc = subprocess.run(
             [sys.executable, "-c", program],

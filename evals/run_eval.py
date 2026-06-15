@@ -85,7 +85,8 @@ async def run(args: argparse.Namespace) -> int:
                     "cost_usd": res.cost_usd,
                     "latency_ms": res.latency_ms,
                     "error": err,
-                    "answer": (res.answer or "")[:1000],
+                    "answer": res.answer or "",
+                    "answer_preview": (res.answer or "")[:1000],
                 }
             )
             flag = f"ERR {err}" if err else f"score={score:.0f}"
