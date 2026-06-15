@@ -1,5 +1,24 @@
 # Fusion Engine: Fusion API and OpenRouter Fusion Alternative
 
+<p align="center">
+  <a href="https://github.com/luckeyfaraday/fusion-engine/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/luckeyfaraday/fusion-engine/ci.yml?branch=main&amp;label=CI&amp;style=for-the-badge"></a>
+  <a href="https://github.com/luckeyfaraday/fusion-engine/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/luckeyfaraday/fusion-engine?style=for-the-badge"></a>
+  <img alt="Python 3.10-3.12" src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&amp;logo=python&amp;logoColor=white">
+  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-7C3AED?style=for-the-badge">
+  <img alt="OpenRouter" src="https://img.shields.io/badge/OpenRouter-Fusion%20API-111827?style=for-the-badge">
+  <img alt="OpenAI-compatible API" src="https://img.shields.io/badge/API-OpenAI--compatible-10A37F?style=for-the-badge">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#what-is-fusion-engine">What It Does</a> ·
+  <a href="#openai-compatible-api-and-fastapi-server">HTTP API</a> ·
+  <a href="#benchmarking-llm-ensembles--does-fusion-actually-beat-one-model">Benchmarks</a> ·
+  <a href="#openrouter-fusion-alternative">OpenRouter Fusion Alternative</a> ·
+  <a href="#contributing-and-security">Contributing</a> ·
+  <a href="#license">License</a>
+</p>
+
 **Fusion Engine is a self-hosted Fusion API and OpenRouter Fusion alternative
 for building reliable AI model ensembles.** Send one prompt to *N* large
 language models in parallel through [OpenRouter](https://openrouter.ai), collect
@@ -18,6 +37,14 @@ chat completions, and benchmarkable fusion results.
 
 One prompt in → many models answer → one fused answer out. You control the
 panel composition, the judge prompts, and where it runs — no vendor lock-in.
+
+| Widget | What Fusion Engine Gives You |
+|---|---|
+| Fusion API | Self-hosted multi-model fusion with transparent cost, token, and latency data. |
+| OpenRouter Fusion | Bring your own OpenRouter models and panel definitions instead of using a black box. |
+| Fable Fusion / Fusion Fable | Keyword-aligned multi-model synthesis for agents, research, code, and creative workflows. |
+| OpenAI-compatible gateway | `/v1/models` and `/v1/chat/completions` endpoints for existing AI clients. |
+| Eval harness | GSM8K, HumanEval, MMLU, GPQA, paired baselines, and cost-aware reporting. |
 
 ---
 
@@ -427,6 +454,21 @@ N× cost. Graders ship for `multiple_choice`, `numeric`, `exact_match`, and
 
 Beyond a one-off check, this is how you **tune panels** — swap models, judges, or
 templates and keep what moves the metric for *your* workload.
+
+---
+
+## Contributing and Security
+
+| Resource | Link |
+|---|---|
+| Contributing guide | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| Security policy | [`SECURITY.md`](SECURITY.md) |
+| CI workflow | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| License | [`LICENSE`](LICENSE) |
+
+Issues and pull requests should include enough context to reproduce the behavior,
+especially for model, panel, judge-template, and benchmark changes. Security
+reports should follow the private disclosure path in `SECURITY.md`.
 
 ---
 
