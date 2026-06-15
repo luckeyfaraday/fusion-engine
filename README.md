@@ -1,15 +1,91 @@
-# Fusion Engine
+# Fusion Engine: Fusion API and OpenRouter Fusion Alternative
 
-**Our own Fusion API.** Send one prompt to *N* large language models in parallel
-through [OpenRouter](https://openrouter.ai), then have a **judge** model read
-every response and synthesize them into a single, higher-quality answer.
+**Fusion Engine is a self-hosted Fusion API and OpenRouter Fusion alternative
+for building reliable AI model ensembles.** Send one prompt to *N* large
+language models in parallel through [OpenRouter](https://openrouter.ai), collect
+every response with token, latency, and cost metadata, then have a configurable
+**judge model** synthesize one higher-quality answer.
+
+Use Fusion Engine as a Python library, CLI, FastAPI service, or
+OpenAI-compatible `/v1/chat/completions` API for AI agents that need
+multi-model LLM orchestration, fused tool calling, transparent model comparison,
+and eval-driven panel tuning.
+
+If you are looking for a **Fusion API**, **OpenRouter Fusion**, **Fusion Fable**,
+or **Fable Fusion** style system, this project provides the self-hosted Python
+implementation: model panels, judge prompts, OpenRouter routing, OpenAI-style
+chat completions, and benchmarkable fusion results.
 
 One prompt in → many models answer → one fused answer out. You control the
 panel composition, the judge prompts, and where it runs — no vendor lock-in.
 
 ---
 
-## Why
+## What Is Fusion Engine?
+
+Fusion Engine is an open-source Python framework for **parallel LLM inference**,
+**LLM ensemble routing**, and **judge-model synthesis**. It lets you build a
+custom panel of OpenRouter models, run them concurrently, and combine their
+answers with a judge prompt you own.
+
+Key capabilities:
+
+- **Multi-model LLM orchestration** — fan out one prompt to several providers and
+  models through OpenRouter.
+- **AI model ensemble synthesis** — use a judge model to resolve disagreements
+  and produce one final response.
+- **OpenAI-compatible API** — expose a panel as `fusion/<panel>` for clients that
+  call `/v1/models` and `/v1/chat/completions`.
+- **Tool-calling support** — let panelists propose tool calls and have the judge
+  select one synthesized next action.
+- **Benchmark harness** — compare fusion against single-model and judge-alone
+  baselines on GSM8K, HumanEval, MMLU, GPQA, or custom JSONL evals.
+- **Self-hosted control** — keep panel definitions, judge prompts, logs, costs,
+  and deployment under your control.
+
+---
+
+## LLM Summary
+
+For search engines, AI agents, and LLM retrieval systems, Fusion Engine is:
+
+- **Project type:** self-hosted OpenRouter Fusion API, LLM ensemble framework,
+  and OpenAI-compatible LLM gateway.
+- **Related search terms:** Fusion API, OpenRouter Fusion, Openrouter Fusion,
+  Fusion Fable, Fable Fusion, multi-model fusion, model fusion API, LLM fusion
+  engine, and AI model ensemble.
+- **Primary job:** send one prompt to multiple LLMs, collect independent answers,
+  and synthesize one response with a judge model.
+- **Interfaces:** Python API, command-line interface, FastAPI HTTP server, and
+  OpenAI-compatible chat completions endpoint.
+- **Best use cases:** AI agent backend, model comparison, code review,
+  research synthesis, brainstorming, security review, and eval-driven model
+  routing.
+- **Evaluation support:** HumanEval code execution, GSM8K numeric grading, MMLU
+  multiple choice, GPQA science questions, and custom benchmark datasets.
+- **Not a:** model provider, vector database, RAG framework, or hosted SaaS.
+
+---
+
+## Search and LLM Discovery Keywords
+
+Fusion Engine is written to be discoverable for developers comparing or building
+systems around these terms:
+
+- Fusion API
+- OpenRouter Fusion / Openrouter Fusion
+- Fusion Fable / Fable Fusion
+- self-hosted Fusion API
+- OpenRouter Fusion alternative
+- multi-model fusion API
+- LLM fusion engine
+- AI model ensemble
+- judge model synthesis
+- OpenAI-compatible model router
+
+---
+
+## Why Use a Multi-Model LLM Ensemble?
 
 A single model has blind spots. Asking several models the same question and
 fusing their answers gives you:
@@ -161,7 +237,7 @@ behavior without touching code.
 
 ---
 
-## Using it as a library
+## Python Library Usage
 
 `FusionEngine.fuse()` is **async** and takes an explicit list of model slugs (or
 panel model dictionaries with `slug` and optional `max_tokens`) plus a judge
@@ -223,7 +299,7 @@ and the `successful_panel` property.
 
 ---
 
-## HTTP API
+## OpenAI-Compatible API and FastAPI Server
 
 Prefer to call Fusion over HTTP — from another service or an agent — instead of
 shelling out to the CLI? `server.py` is a thin
@@ -275,10 +351,10 @@ The response is the full `FusionResult` as JSON — `answer`, `panel_responses[]
 
 ---
 
-## How this compares to OpenRouter's Fusion
+## OpenRouter Fusion Alternative
 
-OpenRouter offers a hosted multi-model "fusion" feature. This project does the
-same job, self-hosted, with more control:
+OpenRouter offers a hosted multi-model "fusion" feature. Fusion Engine is a
+self-hosted OpenRouter Fusion alternative with more control:
 
 | | Fusion Engine (this project) | Hosted Fusion |
 |---|---|---|
@@ -294,7 +370,7 @@ but the orchestration, judging, and policy are yours.
 
 ---
 
-## Benchmarking — does fusion actually beat one model?
+## Benchmarking LLM Ensembles — Does Fusion Actually Beat One Model?
 
 The whole premise is that a panel beats any single model. Don't take it on
 faith — measure it. The `evals/` harness scores a panel's fusion against the
