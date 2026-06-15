@@ -50,7 +50,9 @@ def test_judge_template_without_placeholders_still_gets_material(tmp_path) -> No
 
 def test_spending_routes_require_bearer_when_configured(monkeypatch) -> None:
     monkeypatch.setenv("FUSION_SERVER_API_KEY", "server-secret")
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    # Keep this test offline while still passing the server's API-key guard.
+    # The empty prompt should fail validation before any OpenRouter call happens.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
     from fastapi.testclient import TestClient
 
