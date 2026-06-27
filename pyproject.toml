@@ -38,4 +38,4 @@ fusion = "cli:main"
 fusion-engine = "cli:main"
 
 [tool.setuptools]
-py-modules = ["cli", "fusion", "panels", "server"]
+py-modules = ["cli", "codex_auth", "fusion", "panels", "server"]

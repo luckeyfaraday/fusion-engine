@@ -26,14 +26,33 @@ callers are expected to set up logging output themselves.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 import httpx
+
+try:  # Package import (``fusion_engine``) and bare-module import both work.
+    from .codex_auth import (
+        CODEX_RESPONSES_URL,
+        CodexAuth,
+        CodexAuthError,
+        ResponsesAccumulator,
+        build_responses_payload,
+    )
+except ImportError:
+    from codex_auth import (
+        CODEX_RESPONSES_URL,
+        CodexAuth,
+        CodexAuthError,
+        ResponsesAccumulator,
+        build_responses_payload,
+    )
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -43,6 +62,10 @@ logger.addHandler(logging.NullHandler())
 # --------------------------------------------------------------------------- #
 
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Slug prefix for models that Codex OAuth can serve through the ChatGPT
+# subscription. When OAuth is enabled, these bypass OpenRouter entirely.
+CODEX_MODEL_PREFIX = "openai/"
 
 # Default per-request timeout (seconds). Web-search-enabled calls can be slow,
 # so this is generous on the read side.
@@ -234,6 +257,8 @@ class FusionEngine:
         timeout: httpx.Timeout = DEFAULT_TIMEOUT,
         http_referer: Optional[str] = None,
         app_title: Optional[str] = None,
+        codex_oauth: Optional[bool] = None,
+        codex_auth_file: Optional[str | Path] = None,
     ) -> None:
         """Create an engine.
 
@@ -249,8 +274,26 @@ class FusionEngine:
                 attribution). Falls back to ``OPENROUTER_HTTP_REFERER``.
             app_title: Optional ``X-Title`` header. Falls back to
                 ``OPENROUTER_APP_TITLE``.
+            codex_oauth: If True, serve ``openai/*`` models through a ChatGPT
+                subscription via Codex OAuth instead of OpenRouter (see
+                :mod:`codex_auth`). Defaults to the ``FUSION_CODEX_OAUTH`` env
+                var (``1``/``true``/``yes`` enable it). When enabled, an
+                OpenRouter key is still only required if the panel also contains
+                non-OpenAI models.
+            codex_auth_file: Path to the Codex ``auth.json``. Falls back to
+                ``CODEX_AUTH_FILE`` then ``~/.codex/auth.json``.
         """
         self._api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+        if codex_oauth is None:
+            codex_oauth = os.environ.get("FUSION_CODEX_OAUTH", "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+        self.codex_oauth = codex_oauth
+        self._codex_auth = (
+            CodexAuth(auth_file=codex_auth_file) if codex_oauth else None
+        )
         project_root = Path(__file__).resolve().parent
         self.judge_template_path = Path(
             judge_template_path
@@ -264,6 +307,25 @@ class FusionEngine:
         self.app_title = app_title or os.environ.get("OPENROUTER_APP_TITLE")
 
     # ----------------------------- helpers -------------------------------- #
+
+    def _routes_via_codex(self, model: str) -> bool:
+        """True if ``model`` should be served via Codex OAuth, not OpenRouter."""
+        return self._codex_auth is not None and model.startswith(CODEX_MODEL_PREFIX)
+
+    def _require_openrouter_key(self, models: list[str]) -> None:
+        """Raise unless every non-Codex model has an OpenRouter key available.
+
+        With Codex OAuth on, a panel of only ``openai/*`` models needs no
+        OpenRouter key; one is required the moment any other model is involved.
+        """
+        if self._api_key:
+            return
+        needs = sorted({m for m in models if not self._routes_via_codex(m)})
+        if needs:
+            raise RuntimeError(
+                "No OpenRouter API key. Set OPENROUTER_API_KEY or pass api_key "
+                f"(required for: {', '.join(needs)})."
+            )
 
     def _headers(self) -> dict[str, str]:
         """Build request headers, including optional OpenRouter attribution."""
@@ -400,7 +462,21 @@ class FusionEngine:
         When ``tools`` is given it is forwarded to OpenRouter (OpenAI function
         calling), and any ``tool_calls`` the model emits are parsed onto the
         returned :class:`PanelResponse`.
+
+        ``openai/*`` models are transparently routed through Codex OAuth (the
+        ChatGPT subscription) instead of OpenRouter when that mode is enabled.
         """
+        if self._routes_via_codex(model):
+            return await self._complete_codex(
+                client,
+                model,
+                messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                max_tokens=max_tokens,
+                web_search=bool(plugins),
+            )
+
         payload: dict[str, object] = {"model": model, "messages": messages}
         if plugins:
             payload["plugins"] = plugins
@@ -470,6 +546,110 @@ class FusionEngine:
             cost_usd=cost,
             tool_calls=tool_calls,
             finish_reason=finish_reason,
+        )
+
+    async def _complete_codex(
+        self,
+        client: httpx.AsyncClient,
+        model: str,
+        messages: list[dict[str, object]],
+        tools: Optional[list[dict[str, object]]] = None,
+        tool_choice: Optional[object] = None,
+        max_tokens: Optional[int] = None,
+        web_search: bool = False,
+    ) -> PanelResponse:
+        """Run one completion via Codex OAuth (ChatGPT) instead of OpenRouter.
+
+        Translates the chat request into a Responses payload, streams the SSE
+        result, and folds it back into the same :class:`PanelResponse` shape as
+        :meth:`_complete`. Cost is reported as ``0.0`` because the call is billed
+        against the ChatGPT subscription, not per token. Like :meth:`_complete`,
+        this never raises: failures land in ``PanelResponse.error``.
+
+        ``web_search`` is accepted for signature parity but ignored — OpenRouter's
+        web plugin has no Codex-backend equivalent.
+        """
+        if web_search:
+            logger.debug("Web search is not supported on the Codex path; ignoring for %s", model)
+
+        start = time.perf_counter()
+        # Strip the ``openai/`` routing prefix; the Codex backend wants the bare
+        # model name (e.g. ``gpt-5.5``).
+        backend_model = model[len(CODEX_MODEL_PREFIX):]
+        try:
+            access_token, account_id = await self._codex_auth.get_auth(client)
+        except CodexAuthError as exc:
+            latency_ms = (time.perf_counter() - start) * 1000
+            logger.error("Codex auth failed for %s: %s", model, exc)
+            return PanelResponse(model=model, content="", latency_ms=latency_ms, error=str(exc))
+
+        payload = build_responses_payload(
+            backend_model, messages, tools=tools, tool_choice=tool_choice,
+            max_tokens=max_tokens, stream=True,
+        )
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "OpenAI-Beta": "responses=experimental",
+            "originator": "codex_cli_rs",
+            "session_id": str(uuid4()),
+        }
+        if account_id:
+            headers["chatgpt-account-id"] = account_id
+
+        acc = ResponsesAccumulator()
+        try:
+            async with client.stream(
+                "POST", CODEX_RESPONSES_URL, headers=headers, json=payload,
+                timeout=self.timeout,
+            ) as resp:
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode(errors="replace")[:500]
+                    latency_ms = (time.perf_counter() - start) * 1000
+                    msg = f"HTTP {resp.status_code}: {body}"
+                    logger.error("Codex model %s failed (%.0f ms): %s", model, latency_ms, msg)
+                    return PanelResponse(model=model, content="", latency_ms=latency_ms, error=msg)
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        acc.handle(json.loads(data))
+                    except ValueError:
+                        # Skip keep-alive comments / malformed event lines.
+                        continue
+        except httpx.HTTPError as exc:
+            latency_ms = (time.perf_counter() - start) * 1000
+            msg = f"{type(exc).__name__}: {exc}"
+            logger.error("Codex model %s failed (%.0f ms): %s", model, latency_ms, msg)
+            return PanelResponse(model=model, content="", latency_ms=latency_ms, error=msg)
+
+        latency_ms = (time.perf_counter() - start) * 1000
+        out = acc.result()
+        if out["error"]:
+            logger.error("Codex model %s stream error: %s", model, out["error"])
+            return PanelResponse(model=model, content="", latency_ms=latency_ms, error=out["error"])
+
+        logger.info(
+            "Codex model %s ok: %d in / %d out tokens, %.0f ms, $0 (subscription)%s",
+            model,
+            out["tokens_in"],
+            out["tokens_out"],
+            latency_ms,
+            f", {len(out['tool_calls'])} tool call(s)" if out["tool_calls"] else "",
+        )
+        return PanelResponse(
+            model=model,
+            content=out["content"],
+            tokens_in=out["tokens_in"],
+            tokens_out=out["tokens_out"],
+            latency_ms=latency_ms,
+            cost_usd=0.0,
+            tool_calls=out["tool_calls"],
+            finish_reason=out["finish_reason"],
         )
 
     async def _dispatch_panel_member(
@@ -549,13 +729,10 @@ class FusionEngine:
             RuntimeError: If no OpenRouter API key is available.
             ValueError: If ``panel`` is empty.
         """
-        if not self._api_key:
-            raise RuntimeError(
-                "No OpenRouter API key. Set OPENROUTER_API_KEY or pass api_key."
-            )
         if not panel:
             raise ValueError("panel must contain at least one model slug")
         panel_specs = [self._model_spec(member) for member in panel]
+        self._require_openrouter_key([s for s, _ in panel_specs] + [judge_model])
 
         run_start = time.perf_counter()
         logger.info(
@@ -661,13 +838,10 @@ class FusionEngine:
             RuntimeError: If no OpenRouter API key is available.
             ValueError: If ``panel`` is empty.
         """
-        if not self._api_key:
-            raise RuntimeError(
-                "No OpenRouter API key. Set OPENROUTER_API_KEY or pass api_key."
-            )
         if not panel:
             raise ValueError("panel must contain at least one model slug")
         panel_specs = [self._model_spec(member) for member in panel]
+        self._require_openrouter_key([s for s, _ in panel_specs] + [judge_model])
 
         run_start = time.perf_counter()
         plugins = [{"id": "web"}] if web_search else None
@@ -763,10 +937,7 @@ class FusionEngine:
         Raises:
             RuntimeError: If no OpenRouter API key is available.
         """
-        if not self._api_key:
-            raise RuntimeError(
-                "No OpenRouter API key. Set OPENROUTER_API_KEY or pass api_key."
-            )
+        self._require_openrouter_key([model])
         plugins = [{"id": "web"}] if web_search else None
         messages = [{"role": "user", "content": prompt}]
         async with httpx.AsyncClient(timeout=self.timeout) as client:
